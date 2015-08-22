@@ -1,0 +1,75 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Victor V"
+date: "Sunday, 23 August, 2015"
+output: html_document
+---
+#Introduction
+In this we to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked  to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har
+
+
+#Download the training and testing datasets if they are not present.
+
+```{r download}
+train_link <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_link <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if(!file.exists("pml-training.csv")) {
+  download.file(train_link, destfile="pml-training.csv", method="curl")
+}
+
+if(!file.exists("pml-testing.csv")) {
+  download.file(test_link, destfile="pml-testing.csv", method="curl")
+}
+```
+#Preparing,  cleaning  and recoding the  data 
+Before starting the study,  we proceed to recode the missing values in the data, and consider  that  "", " ", and "NA" are NA value.
+If the variable contains the  NA value more than 10% of the cases,we are not going to  remove this column for the purpose of getting tidy data. On top of this, we  also remove the firt 7 variables which include X, username, raw_timestamp_part_1,raw_timestamp_part_2, cvtd_timestamp,new_window and num_window. Those variables are not related to the  classe variable.
+
+```{r,loaddata, dependson = "download", cache = TRUE}
+train.set <- read.csv("pml-training.csv", na.strings = c("", " ", "NA"))
+test.set <- read.csv("pml-testing.csv", na.strings = c("", " ", "NA"))
+no.na.index <-apply(train.set,2, function(x) {(sum(is.na(x))/length(x)) <0.1})
+tidy.data <- train.set[,no.na.index]
+# remove the first 7 row 
+tidy.data <- tidy.data[-(1:7)]
+```
+
+#Building  the model and using  cross validation
+Our first step is to  use createDataPartition to split the training data set and validation set. Once we  get the traing set, we  apply the random forest method to train the model. During training process, we use K-fold cross validation (K = 5) to resample the training set.  
+We  check the final model after the training, and the OOB estimate of error rate is <0.9%. this  quite low result shows that the model fits very weill  the training set.
+```{r,buildmodel,cache=TRUE,dependson = "loaddata"}
+library(caret)
+set.seed(31416)
+subset <- createDataPartition(y=tidy.data$classe, p = 0.7, list = FALSE)
+model <- train(classe ~ ., data = tidy.data[subset, ], method = "rf",
+               trControl=trainControl(method="cv",number= 5),
+               allowParallel=TRUE)
+print(model$finalModel, digits=4)
+```
+
+#Out of sample error
+We  use the random forest training model to predict the classe in the validation set in order to check the sample error,  We use the confusionMatrix to check the sample error. It can be observed that  the accurracy is 0.9925 with a 95% confidence interval  (0.99, 0.9946)  and a  P< 2.2e-16  This result shows that the accurary of the model is very good. 
+
+```{r,cv,cache=TRUE, dependson= "buildmodel"}
+cross.predict <- predict(model, newdata = tidy.data[-subset, ])
+confusionMatrix(cross.predict, tidy.data[-subset, ]$classe)
+
+```
+
+#Predict 20 different test cases
+Using the results obtained from the training model, we try to predict the test cases. We proceed to  apply your machine learning algorithm to the 20 test cases available in the test data    
+
+```{r,test, dependson ="buildmodel"}
+test.tidy.data <- predict(model, newdata = test.set [, no.na.index])
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("cases_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(test.tidy.data)
+
+```
+
